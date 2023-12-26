@@ -187,6 +187,15 @@ group by 1,2,3
 
 :::details お掃除対象のテーブルに対してリネーム・有効期限の設定を行うためのコード（クリックでコードを表示する）
 ```py:お掃除対象のテーブルに対してリネーム・有効期限の設定を行う.py
+from google.colab import auth
+auth.authenticate_user()
+
+from google.cloud import bigquery
+from google.colab import drive
+drive.mount('/content/drive')
+
+import pandas as pd
+
 # お掃除対象とするプロジェクト名, データセット名, テーブル名の組み合わせをcsvファイルから読み込む
 df_tmp = pd.read_csv('drive/Shareddrives/任意のファイル名.csv')
 
