@@ -10,7 +10,7 @@ published: true # 公開設定（falseにすると下書き）
 published_at: "2023-12-25 23:59" # 公開設定日時（JST）
 ---
 
-メリークリスマス🎄🎁
+**メリークリスマス🎄🎁**
 街は浮かれ気分かもしれませんが、もうすぐ年の瀬です🔔やり残したことはないでしょうか？
 
 ....
@@ -71,7 +71,7 @@ from
   `任意のプロジェクト名.任意のデータセット名.__TABLES__`
 ```
 
-↓全データセットのテーブル・VIEWの最終更新日時を取得するためのコードは下記です（長いのでクリックしてコードを表示できます）
+- 全データセットのテーブル・VIEWの最終更新日時を取得するためのコード↓
 :::details 全データセットのテーブル・VIEWの最終更新日時を取得するためのコード（クリックでコードを表示する）
 ```py:全データセットのテーブル・VIEWの最終更新日時を取得するためのコード.py
 from google.colab import auth
@@ -102,9 +102,9 @@ df_dataset_name = client.query(query).to_dataframe()
 def query_table_info(project_id, dataset_name):
   return f"""
     select
-      project_id as project_name
-      , dataset_id as dataset_name
-      , table_id as table_name
+      project_id
+      , dataset_id
+      , table_id
       , row_count
       , size_bytes
       , round(safe_divide(size_bytes, (1000*1000)),1) as size_mb
@@ -220,15 +220,113 @@ for i in df_tmp.index:
 :::
 
 # VIEWの削除方針
-テーブルと異なりVIEWの方はsql文で削除できないため、別の方法を取る必要があります。
-今回の記事では省略させていただきます。（もしかしたら本記事に追記します。）
-
 方針としては、ロールバックが行えるようにVIEWクエリのダウンロードを行った上で、VIEWは Cloud Shellでコマンド入力して削除してしまうこととします。
 
-# データセットの削除方針
-テーブルおよびVIEWテーブルのお掃除が済み、データセット内に何もなくなったことを確認した後に、Cloud Shellでコマンド入力して削除すると良さそうです。
-（データセット内に何もなくなったことを確認するためのスクリプトも追記できたら追記します。）
+- VIEWクエリダウンロードのためのコマンド
+```shell
+bq show --format=prettyjson 任意のプロジェクト:データセット名.ビュー名 > ~/Desktop/任意のファイル名.json
+```
+![](https://storage.googleapis.com/zenn-user-upload/18eaf64a284a-20231226.png)*L列のコマンドを実行すれば一気にクエリをダウンロードできる*
 
+- VIEW削除のためのコマンド
+```shell
+bq rm -f -t 任意のプロジェクト:データセット名.ビュー名
+```
+-f オプション(--force)は、確認メッセージを表示せずにリソースを削除するためのコマンドです。
+-t オプション(--table)は、テーブルまたはビューを削除するために必須のコマンドです。
+
+ちなみに下記のSQLコマンドでもVIEWを削除できます。
+```sql
+DROP VIEW 任意のプロジェクト.データセット名.ビュー名;
+```
+
+# データセットの削除方針
+テーブルおよびVIEWテーブルのお掃除が済み、データセット内に何もなくなったことを確認した後に、Cloud Shellでコマンド入力して削除する方針とします。
+
+- データセット内のテーブル・VIEWの数を数えるコード↓
+:::details データセット内のテーブル・VIEWの数を数えるためのコード（クリックでコードを表示する）
+```py:データセット内のテーブル・VIEWの数を数えるためのコード.py
+from google.colab import auth
+auth.authenticate_user()
+
+from google.cloud import bigquery
+from google.colab import drive
+drive.mount('/content/drive')
+
+import pandas as pd
+import datetime
+
+# 自身のGCPProjectIDを指定
+project_id = '任意のプロジェクト名'
+client = bigquery.Client(project=project_id)
+
+# 実行するクエリ
+query_get_schema_name =  """
+              select distinct schema_name
+              from `任意のプロジェクト名.region-us.INFORMATION_SCHEMA.SCHEMATA` ;
+         """
+
+# メソッドに`to_dataframe()`をつけるとpd.DataFrameで結果を受け取れる
+df_get_schema_name = client.query(query_get_schema_name).to_dataframe()
+
+def query_number_of_table(project_id, dataset_name):
+  return f'''
+    with base as (
+      select
+        '{project_id}' as project_id
+        , '{dataset_name}' as dataset_id
+    )
+
+    select
+      project_id
+      , dataset_id
+      , case
+        when type = 1 then 'BASE TABLE'
+        when type = 2 then 'VIEW'
+        when type = 3 then 'EXTERNAL'
+        when type = 4 then 'OTHER'
+      end table_type
+      , count(distinct table_id) as n_table
+    from
+      `{project_id}.{dataset_name}.__TABLES__`
+    group by 1,2,3
+  '''
+
+df_number_of_table = pd.DataFrame(columns=['project_id', 'dataset_id', 'table_type', 'n_table'])
+for i in range(0, len(df_get_schema_name)):
+  dataset_name = df_get_schema_name.schema_name[i]
+  query = query_number_of_table(project_id, dataset_name)
+  df_number_of_table = pd.concat([df_number_of_table, pd.io.gbq.read_gbq(query, project_id=project_id)])
+
+# 結果をcsvとして保存する
+DATE = datetime.date.today().strftime('%Y_%m_%d')
+df_number_of_table.to_csv('drive/Shareddrives/任意のファイル名_' + DATE +'.csv', index = False)
+```
+:::
+
+- データセット削除のためのコマンド
+VIEWの削除と同様の方法でデータセットを削除します。
+
+:::message alert
+誤って必要なデータセットを削除しないようにご注意ください。
+テーブルのみ、[タイムトラベル機能(公式ドキュメント)](https://cloud.google.com/bigquery/docs/time-travel?hl=ja)で復元できる可能性がありますが、ビュー、マテリアライズド ビュー、ルーティンなど、データセットに関連付けられている他のオブジェクトは手動で再作成する必要があります。
+:::
+
+```shell
+bq rm -r -f -d 任意のプロジェクトID:任意のデータセット名
+```
+-r オプション(--recursive)は、データセットおよびその中のすべてのテーブル、テーブルデータ、モデルを削除するためのコマンドです。
+-f オプション(--force)は、確認メッセージを表示せずにリソースを削除するためのコマンドです。
+-t オプション(--table)は、テーブルまたはビューを削除するために必須のコマンドです。
+
+ちなみにSQL文でもデータセットの削除は可能です。
+```sql
+-- 空のデータセットを削除する場合に有効
+DROP SCHEMA IF EXISTS 任意のデータセット名;
+
+-- ータセットとそのすべてのコンテンツを削除するには、CASCADE キーワードを使用する
+DROP SCHEMA IF EXISTS 任意のデータセット名 CASCADE;
+```
 
 ## その他Tips
 先述のように、テーブルは有効期限を設定することで自動でお掃除が完了する仕組みを作ることができます。
@@ -243,7 +341,7 @@ sandbox環境を個人あるいはチームごとに作成して利用しても�
 今回はPythonで手軽にfor文を回したかったので Google Colaboratoryを利用しましたが、やろうと思えば dbt jinja で実装することもできそうです。
 （都度、csvを読み込んだりも必要そうなのでdbtで実装するメリットはあまりなさそうですが...）
 
-現実世界の部屋掃除と異なって、BigQueryのテーブルのお掃除は日々コツコツやるよりもまとめてやった方が良さそうと感じました。
+現実世界のお部屋掃除と異なって、BigQueryのテーブルのお掃除は日々コツコツやるよりもまとめてやった方が良さそうと感じました。
 とはいえ、似たようなテーブル名ばかりで混同が起きたり、ストレージコストがかかったりといったデメリットもあるので気になったテーブルは都度お掃除するのが良いと思います。
 
 また、その他Tipsで触れたsandbox環境は個人的にも重宝しているのでよかったら試してみてください！
@@ -253,4 +351,7 @@ sandbox環境を個人あるいはチームごとに作成して利用しても�
 # 参考記事
 - [公式ドキュメントにない方法で、BigQueryにあるデータセット内の全てのテーブル・ビューの情報を取得してみた - データサイエンス＆サイバーセキュリティ備忘録](https://a7xche.hatenablog.com/entry/2020/09/12/222045)
 - [タイムトラベルとフェイルセーフによるデータの保持  |  BigQuery  |  Google Cloud](https://cloud.google.com/bigquery/docs/time-travel?hl=ja)
-- [「データセット プロパティの更新  |  BigQuery  |  Google Cloud」](https://cloud.google.com/bigquery/docs/updating-datasets?hl=ja)をご参照ください。）
+- [データセット プロパティの更新  |  BigQuery  |  Google Cloud](https://cloud.google.com/bigquery/docs/updating-datasets?hl=ja)をご参照ください。）
+- [ビューの管理  |  BigQuery  |  Google Cloud](https://cloud.google.com/bigquery/docs/managing-views?hl=ja)
+- [データセットを管理する  |  BigQuery  |  Google Cloud](https://cloud.google.com/bigquery/docs/managing-datasets?hl=ja)
+- [bq コマンドライン ツール リファレンス  |  BigQuery  |  Google Cloud](https://cloud.google.com/bigquery/docs/reference/bq-cli-reference?hl=ja)
